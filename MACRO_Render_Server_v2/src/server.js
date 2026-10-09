@@ -12,5 +12,5 @@ wss.on('connection',(ws,req)=>{const u=new URL(req.url,'http://localhost');if(!H
 app.get('/health',(_q,r)=>r.json({ok:true,hostConnected:!!(host&&host.readyState===WebSocket.OPEN)}));
 app.use('/api',(req,res)=>{const chunks=[];req.on('data',c=>{chunks.push(c);if(chunks.reduce((n,b)=>n+b.length,0)>25*1024*1024)req.destroy()});req.on('end',async()=>{try{const body=Buffer.concat(chunks);const result=await callHost({method:req.method,path:req.originalUrl,headers:req.headers,bodyBase64:body.toString('base64')});const h=result.headers||{};for(const [k,v] of Object.entries(h)){if(v!==undefined&&!['connection','transfer-encoding','content-length'].includes(k.toLowerCase()))try{res.setHeader(k,v)}catch{}}const out=Buffer.from(result.bodyBase64||'','base64');res.status(result.status||500).send(out)}catch(e){res.status(503).json({error:e.message})}})});
 app.use(express.static(path.join(__dirname,'..','public')));
-app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'..','public','index.html')));
+app.get("/*splat",(req,res)=>res.sendFile(path.join(__dirname,'..','public','index.html')));
 server.listen(PORT,'0.0.0.0',()=>console.log('[MACRO CONTROL] '+PORT));
