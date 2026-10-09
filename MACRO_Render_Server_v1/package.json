@@ -1,0 +1,10 @@
+{
+  "name": "macro-control",
+  "version": "2.0.0",
+  "private": true,
+  "description": "MACRO Ver 2.0 central relay for Render",
+  "main": "src/server.js",
+  "scripts": {"start": "node src/server.js"},
+  "engines": {"node": ">=20"},
+  "dependencies": {"express": "^5.1.0", "ws": "^8.18.3"}
+}
