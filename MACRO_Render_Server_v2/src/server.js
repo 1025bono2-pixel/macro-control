@@ -1,66 +1,567 @@
-const express=require('express');
-const http=require('http');
-const path=require('path');
-const crypto=require('crypto');
-const {WebSocketServer,WebSocket}=require('ws');
-const PORT=Number(process.env.PORT||10000),HOST_SECRET=String(process.env.HOST_SECRET||'');
-const app=express(),server=http.createServer(app),wss=new WebSocketServer({server,path:'/host'});
-let host=null;const pending=new Map();
-function send(ws,x){if(ws&&ws.readyState===WebSocket.OPEN){ws.send(JSON.stringify(x));return true}return false}
-function callHost(payload,timeout=30000){return new Promise((resolve,reject)=>{if(!host||host.readyState!==WebSocket.OPEN)return reject(new Error('총괄 PC Host가 오프라인입니다.'));const requestId=crypto.randomUUID(),timer=setTimeout(()=>{pending.delete(requestId);reject(new Error('Host 응답 시간 초과'));},timeout);pending.set(requestId,{resolve,reject,timer});send(host,{type:'proxy.http',requestId,payload});});}
-wss.on('connection', (ws, req) => {
-  console.log('[HOST] WebSocket request received');
+const express = require('express');
+const http = require('http');
+const path = require('path');
+const crypto = require('crypto');
 
-  const u = new URL(
-    req.url,
-    'http://localhost'
+const {
+  WebSocketServer,
+  WebSocket
+} = require('ws');
+
+const PORT =
+  Number(
+    process.env.PORT ||
+    10000
   );
 
-  const receivedSecret =
-    u.searchParams.get('secret') || '';
+const HOST_SECRET =
+  String(
+    process.env.HOST_SECRET ||
+    ''
+  );
 
+const app =
+  express();
+
+const server =
+  http.createServer(app);
+
+const wss =
+  new WebSocketServer({
+    server,
+    path: '/host'
+  });
+
+let host =
+  null;
+
+const pending =
+  new Map();
+
+
+function send(
+  ws,
+  data
+) {
   if (
-    !HOST_SECRET ||
-    receivedSecret !== HOST_SECRET
+    ws &&
+    ws.readyState ===
+      WebSocket.OPEN
   ) {
+    ws.send(
+      JSON.stringify(data)
+    );
+
+    return true;
+  }
+
+  return false;
+}
+
+
+function callHost(
+  payload,
+  timeout = 30000
+) {
+  return new Promise(
+    (
+      resolve,
+      reject
+    ) => {
+
+      if (
+        !host ||
+        host.readyState !==
+          WebSocket.OPEN
+      ) {
+        reject(
+          new Error(
+            '총괄 PC Host가 오프라인입니다.'
+          )
+        );
+
+        return;
+      }
+
+      const requestId =
+        crypto.randomUUID();
+
+      const timer =
+        setTimeout(
+          () => {
+            pending.delete(
+              requestId
+            );
+
+            reject(
+              new Error(
+                'Host 응답 시간 초과'
+              )
+            );
+          },
+          timeout
+        );
+
+      pending.set(
+        requestId,
+        {
+          resolve,
+          reject,
+          timer
+        }
+      );
+
+      send(
+        host,
+        {
+          type:
+            'proxy.http',
+
+          requestId,
+
+          payload
+        }
+      );
+    }
+  );
+}
+
+
+wss.on(
+  'connection',
+  (
+    ws,
+    req
+  ) => {
+
     console.log(
-      '[HOST] authentication failed'
+      '[HOST] WebSocket connection received'
     );
 
-    ws.close(
-      1008,
-      'unauthorized'
+    const url =
+      new URL(
+        req.url,
+        'http://localhost'
+      );
+
+    const receivedSecret =
+      String(
+        url.searchParams.get(
+          'secret'
+        ) || ''
+      );
+
+    if (
+      !HOST_SECRET
+    ) {
+      console.log(
+        '[HOST] HOST_SECRET is not configured'
+      );
+
+      ws.close(
+        1008,
+        'server secret missing'
+      );
+
+      return;
+    }
+
+    if (
+      receivedSecret !==
+      HOST_SECRET
+    ) {
+      console.log(
+        '[HOST] authentication failed'
+      );
+
+      ws.close(
+        1008,
+        'unauthorized'
+      );
+
+      return;
+    }
+
+    console.log(
+      '[HOST] authentication successful'
     );
 
-    return;
+    if (
+      host &&
+      host.readyState ===
+        WebSocket.OPEN
+    ) {
+      console.log(
+        '[HOST] replacing previous Host'
+      );
+
+      host.close(
+        1012,
+        'replaced'
+      );
+    }
+
+    host =
+      ws;
+
+    console.log(
+      '[HOST] connected'
+    );
+
+
+    ws.on(
+      'message',
+      raw => {
+
+        let message;
+
+        try {
+          message =
+            JSON.parse(
+              String(raw)
+            );
+        } catch {
+          return;
+        }
+
+        if (
+          message.requestId &&
+          pending.has(
+            message.requestId
+          )
+        ) {
+
+          const item =
+            pending.get(
+              message.requestId
+            );
+
+          pending.delete(
+            message.requestId
+          );
+
+          clearTimeout(
+            item.timer
+          );
+
+          if (
+            message.ok ===
+            false
+          ) {
+            item.reject(
+              new Error(
+                message.error ||
+                'Host error'
+              )
+            );
+          } else {
+            item.resolve(
+              message.result
+            );
+          }
+        }
+      }
+    );
+
+
+    ws.on(
+      'pong',
+      () => {
+        ws.isAlive =
+          true;
+      }
+    );
+
+
+    ws.on(
+      'error',
+      error => {
+        console.log(
+          '[HOST] WebSocket error:',
+          error.message
+        );
+      }
+    );
+
+
+    ws.on(
+      'close',
+      (
+        code,
+        reason
+      ) => {
+
+        console.log(
+          '[HOST] disconnected',
+          'code=' + code,
+          'reason=' +
+            String(
+              reason || ''
+            )
+        );
+
+        if (
+          host ===
+          ws
+        ) {
+          host =
+            null;
+        }
+      }
+    );
+
+    ws.isAlive =
+      true;
   }
+);
 
-  console.log(
-    '[HOST] authentication successful'
+
+const heartbeat =
+  setInterval(
+    () => {
+
+      wss.clients.forEach(
+        ws => {
+
+          if (
+            ws.isAlive ===
+            false
+          ) {
+            console.log(
+              '[HOST] heartbeat timeout'
+            );
+
+            ws.terminate();
+
+            return;
+          }
+
+          ws.isAlive =
+            false;
+
+          try {
+            ws.ping();
+          } catch {}
+        }
+      );
+    },
+    30000
   );
 
-  if (
-    host &&
-    host.readyState === WebSocket.OPEN
-  ) {
-    host.close(
-      1012,
-      'replaced'
+
+wss.on(
+  'close',
+  () => {
+    clearInterval(
+      heartbeat
     );
   }
+);
 
-  host = ws;
 
-  console.log(
-    '[HOST] connected'
-  );
+app.get(
+  '/health',
+  (
+    req,
+    res
+  ) => {
 
-  // 기존 message / close 처리 코드는
-  // 이 아래에 그대로 유지
-});
-wss.on('connection',(ws,req)=>{const u=new URL(req.url,'http://localhost');if(!HOST_SECRET||u.searchParams.get('secret')!==HOST_SECRET)return ws.close(1008,'unauthorized');if(host&&host.readyState===WebSocket.OPEN)host.close(1012,'replaced');host=ws;console.log('[HOST] connected');ws.on('message',raw=>{let m;try{m=JSON.parse(String(raw))}catch{return}if(m.requestId&&pending.has(m.requestId)){const p=pending.get(m.requestId);pending.delete(m.requestId);clearTimeout(p.timer);m.ok===false?p.reject(new Error(m.error||'Host error')):p.resolve(m.result)}});ws.on('close',()=>{if(host===ws){host=null;console.log('[HOST] disconnected')}})});
-app.get('/health',(_q,r)=>r.json({ok:true,hostConnected:!!(host&&host.readyState===WebSocket.OPEN)}));
-app.use('/api',(req,res)=>{const chunks=[];req.on('data',c=>{chunks.push(c);if(chunks.reduce((n,b)=>n+b.length,0)>25*1024*1024)req.destroy()});req.on('end',async()=>{try{const body=Buffer.concat(chunks);const result=await callHost({method:req.method,path:req.originalUrl,headers:req.headers,bodyBase64:body.toString('base64')});const h=result.headers||{};for(const [k,v] of Object.entries(h)){if(v!==undefined&&!['connection','transfer-encoding','content-length'].includes(k.toLowerCase()))try{res.setHeader(k,v)}catch{}}const out=Buffer.from(result.bodyBase64||'','base64');res.status(result.status||500).send(out)}catch(e){res.status(503).json({error:e.message})}})});
-app.use(express.static(path.join(__dirname,'..','public')));
-app.get("/*splat",(req,res)=>res.sendFile(path.join(__dirname,'..','public','index.html')));
-server.listen(PORT,'0.0.0.0',()=>console.log('[MACRO CONTROL] '+PORT));
+    res.json({
+      ok: true,
+
+      hostConnected:
+        !!(
+          host &&
+          host.readyState ===
+            WebSocket.OPEN
+        )
+    });
+  }
+);
+
+
+app.use(
+  '/api',
+  (
+    req,
+    res
+  ) => {
+
+    const chunks =
+      [];
+
+    let size =
+      0;
+
+    req.on(
+      'data',
+      chunk => {
+
+        size +=
+          chunk.length;
+
+        if (
+          size >
+          25 *
+          1024 *
+          1024
+        ) {
+          req.destroy();
+
+          return;
+        }
+
+        chunks.push(
+          chunk
+        );
+      }
+    );
+
+
+    req.on(
+      'end',
+      async () => {
+
+        try {
+
+          const body =
+            Buffer.concat(
+              chunks
+            );
+
+          const result =
+            await callHost({
+              method:
+                req.method,
+
+              path:
+                req.originalUrl,
+
+              headers:
+                req.headers,
+
+              bodyBase64:
+                body.toString(
+                  'base64'
+                )
+            });
+
+
+          const headers =
+            result.headers ||
+            {};
+
+
+          for (
+            const [
+              key,
+              value
+            ]
+            of Object.entries(
+              headers
+            )
+          ) {
+
+            if (
+              value ===
+              undefined
+            ) {
+              continue;
+            }
+
+            if (
+              [
+                'connection',
+                'transfer-encoding',
+                'content-length'
+              ].includes(
+                key.toLowerCase()
+              )
+            ) {
+              continue;
+            }
+
+            try {
+              res.setHeader(
+                key,
+                value
+              );
+            } catch {}
+          }
+
+
+          const output =
+            Buffer.from(
+              result.bodyBase64 ||
+              '',
+              'base64'
+            );
+
+
+          res
+            .status(
+              result.status ||
+              500
+            )
+            .send(
+              output
+            );
+
+        } catch (
+          error
+        ) {
+
+          res
+            .status(503)
+            .json({
+              error:
+                error.message
+            });
+        }
+      }
+    );
+  }
+);
+
+
+app.use(
+  express.static(
+    path.join(
+      __dirname,
+      '..',
+      'public'
+    )
+  )
+);
+
+
+app.get(
+  '/*splat',
+  (
+    req,
+    res
+  ) => {
+
+    res.sendFile(
+      path.join(
+        __dirname,
+        '..',
+        'public',
+        'index.html'
+      )
+    );
+  }
+);
+
+
+server.listen(
+  PORT,
+  '0.0.0.0',
+  () => {
+
+    console.log(
+      '[MACRO CONTROL] ' +
+      PORT
+    );
+  }
+);
