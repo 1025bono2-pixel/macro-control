@@ -10,10 +10,10 @@ async function openApp(){me=await api('/api/me');role=me.role;$('auth').classLis
 async function page(p){
  _activePage=p;const seq=++_pageSeq;stopDashboardMacroTimer();stopDetailLive();
  $('content').classList.toggle('dashboard-content',p==='dashboard');
- const titles={dashboard:'대시보드',macros:'매크로',keywords:'키워드 매크로',admin:'총괄 관리',settings:'설정',help:'도움말',notices:'공지사항'};$('title').textContent=titles[p]||'MACRO';
+ const titles={dashboard:'대시보드',macros:'매크로',keywords:'키워드 매크로',admin:'총괄 관리',voice:'보룸봇 설정',settings:'설정',help:'도움말',notices:'공지사항'};$('title').textContent=titles[p]||'MACRO';
  if(p==='dashboard'){const st=cachedApi('/api/status'),recent=cachedApi('/api/macro/recent');if(st)renderDashboard(st,recent||[]);else loadingShell('대시보드를 불러오는 중...');return requestAnimationFrame(()=>dashboard(seq))}
  if(p==='macros'||p==='keywords'){const st=cachedApi('/api/status'),all=cachedApi('/api/macros'),kind=p==='keywords'?'keyword':'schedule';window._macroKind=kind;if(st&&all){window._accounts=st.accounts;window._macros=all;renderMacroList()}else loadingShell(p==='keywords'?'키워드 매크로를 불러오는 중...':'매크로를 불러오는 중...');return requestAnimationFrame(()=>macroPage(kind,seq))}
- loadingShell();requestAnimationFrame(()=>{if(seq!==_pageSeq)return;if(p==='admin')adminPage();else if(p==='settings')settingsPage();else if(p==='help')helpPage();else if(p==='notices')noticesPage()});
+ loadingShell();requestAnimationFrame(()=>{if(seq!==_pageSeq)return;if(p==='admin')adminPage();else if(p==='voice')return voiceSettingsPage();if(p==='settings')settingsPage();else if(p==='help')helpPage();else if(p==='notices')noticesPage()});
 }
 function fmtRemain(ms){if(ms==null)return'무제한';const h=Math.max(0,Math.floor(ms/3600000)),d=Math.floor(h/24);return`${d}일 ${h%24}시간`}function licHtml(l){return l?.active?`<span class="license-good">● 활성</span> · <b>${fmtRemain(l.remainingMs)}</b>`:`<span class="bad">● 비활성</span>`}
 let _dashboardMacroTimer=null;
@@ -168,3 +168,39 @@ async function openNoticeFromToast(id){markNoticeSeen(id);closeNoticeToast();awa
 async function noticesPage(){const list=await api('/api/notices');for(const n of list)markNoticeSeen(n.id);$('content').innerHTML=`${role==='admin'?`<div class="tile form notice-editor"><h3>공지사항 올리기</h3><label>제목<input id="noticeTitle" maxlength="120" placeholder="공지 제목"></label><label>내용<textarea id="noticeContent" rows="6" maxlength="10000" placeholder="공지 내용을 입력하세요"></textarea></label><button class="accent" onclick="postNotice()">공지 등록</button></div>`:''}<div class="notice-list"><h3>공지사항</h3>${list.map(n=>`<article class="tile notice-item" id="notice-${esc(n.id)}"><div class="notice-head"><div><b>${esc(n.title)}</b><div class="muted">${esc(new Date(n.createdAt).toLocaleString('ko-KR'))}</div></div>${role==='admin'?`<button class="danger" onclick="deleteNotice('${esc(n.id)}')">삭제</button>`:''}</div><div class="notice-content">${esc(n.content)}</div></article>`).join('')||'<div class="tile muted">등록된 공지사항이 없습니다.</div>'}</div>`}
 async function postNotice(){try{await api('/api/notices',{method:'POST',body:JSON.stringify({title:$('noticeTitle').value,content:$('noticeContent').value})});await noticesPage()}catch(e){alert(e.message)}}
 async function deleteNotice(id){if(!confirm('이 공지사항을 삭제할까요?'))return;try{await api('/api/notices/'+encodeURIComponent(id),{method:'DELETE'});await noticesPage()}catch(e){alert(e.message)}}
+
+async function voiceSettingsPage(){
+ const content=$('content');
+ content.innerHTML='<div class="tile form"><p>보룸봇 설정 불러오는 중</p></div>';
+ try{
+  const {accounts}=await api('/api/status',{noCache:true});
+  if($('title').textContent!=='보룸봇 설정')return;
+  content.innerHTML='<div class="tile form"><label>봇 계정<select id="voiceAccount" onchange="loadVoiceSettings()">'+accounts.map(a=>'<option value="'+esc(a.key)+'">'+esc(a.displayName||a.key)+'</option>').join('')+'</select></label><div id="voiceForm" aria-live="polite"></div></div>';
+  if(accounts.length)await loadVoiceSettings();else $('voiceForm').textContent='연결된 봇 계정이 없습니다.';
+ }catch(e){if($('title').textContent==='보룸봇 설정')content.textContent=e.message;}
+}
+async function loadVoiceSettings(){
+ const account=$('voiceAccount').value,form=$('voiceForm');
+ const current=()=>$('voiceForm')===form&&$('voiceAccount')?.value===account;
+ form.textContent='설정 불러오는 중';
+ try{
+  const result=await api('/api/voice-settings?account='+encodeURIComponent(account),{noCache:true});
+  if(!current())return;
+  form.innerHTML='<p>'+(result.authRequired?'카카오톡 재인증이 필요합니다. Host PC에서 npm run auth를 실행하세요.':result.online?'카카오톡 연결됨':'카카오톡 오프라인')+'</p><label>허용 방과 운영자<textarea id="voiceRooms" rows="7" placeholder="채팅방ID 운영자ID,운영자ID"></textarea></label><p class="muted">방마다 한 줄에 채팅방 ID와 운영자 ID를 입력하세요. 명령은 !보이스룸 개설 또는 !보이스룸 종료입니다.</p><button class="primary" id="saveVoiceRooms">저장</button> <button type="button" onclick="loadVoiceSettings()">새로고침</button><p id="voiceResult" aria-live="polite"></p>';
+  $('voiceRooms').value=result.rooms.map(x=>x.roomId+' '+x.operatorIds.join(',')).join('\n');
+  if(result.lastResult)$('voiceResult').textContent='최근 처리 결과 '+result.lastResult.status;
+  $('saveVoiceRooms').onclick=async()=>{
+   const button=$('saveVoiceRooms');button.disabled=true;
+   try{
+    const rooms=$('voiceRooms').value.split(/\r?\n/).filter(x=>x.trim()).map(line=>{
+     const match=line.trim().match(/^(\d+)\s+(\d+(?:\s*,\s*\d+)*)$/);
+     if(!match)throw Error('각 줄에 채팅방 ID와 운영자 ID를 입력하세요.');
+     return {roomId:match[1],operatorIds:match[2].split(/\s*,\s*/)};
+    });
+    await api('/api/voice-settings?account='+encodeURIComponent(account),{method:'PUT',body:JSON.stringify({rooms})});
+    if(current())$('voiceResult').textContent='저장했습니다.';
+   }catch(e){if(current())$('voiceResult').textContent=e.message;}
+   finally{button.disabled=false;}
+  };
+ }catch(e){if(current())form.textContent=e.message;}
+}
