@@ -189,6 +189,7 @@ async function loadVoiceSettings(){
    api(settingsUrl,{noCache:true}),api('/api/rooms?account='+encodeURIComponent(account),{noCache:true})
   ]);
   if(!current())return;
+  if(result.schemaVersion!==2){form.textContent='Host PC의 MACRO를 최신 통합판으로 업데이트하세요.';return;}
   const selected=new Map(result.rooms.map(room=>[room.roomId,room.operatorIds.join(', ')]));
   const choices=new Map(knownRooms.map(room=>[String(room.roomId),room.roomName]));
   for(const id of selected.keys())if(!choices.has(id))choices.set(id,id);
