@@ -182,22 +182,59 @@ async function voiceSettingsPage(){
 async function loadVoiceSettings(){
  const account=$('voiceAccount').value,form=$('voiceForm');
  const current=()=>$('voiceForm')===form&&$('voiceAccount')?.value===account;
+ const settingsUrl='/api/voice-settings?account='+encodeURIComponent(account);
  form.textContent='설정 불러오는 중';
  try{
-  const result=await api('/api/voice-settings?account='+encodeURIComponent(account),{noCache:true});
+  const [result,knownRooms]=await Promise.all([
+   api(settingsUrl,{noCache:true}),api('/api/rooms?account='+encodeURIComponent(account),{noCache:true})
+  ]);
   if(!current())return;
-  form.innerHTML='<p>'+(result.authRequired?'카카오톡 재인증이 필요합니다. Host PC에서 npm run auth를 실행하세요.':result.online?'카카오톡 연결됨':'카카오톡 오프라인')+'</p><label>허용 방과 운영자<textarea id="voiceRooms" rows="7" placeholder="채팅방ID 운영자ID,운영자ID"></textarea></label><p class="muted">방마다 한 줄에 채팅방 ID와 운영자 ID를 입력하세요. 명령은 !보이스룸 개설 또는 !보이스룸 종료입니다.</p><button class="primary" id="saveVoiceRooms">저장</button> <button type="button" onclick="loadVoiceSettings()">새로고침</button><p id="voiceResult" aria-live="polite"></p>';
-  $('voiceRooms').value=result.rooms.map(x=>x.roomId+' '+x.operatorIds.join(',')).join('\n');
+  if(result.schemaVersion!==2){form.textContent='Host PC의 MACRO를 최신 통합판으로 업데이트하세요.';return;}
+  const selected=new Map(result.rooms.map(room=>[room.roomId,room.operatorIds.join(', ')]));
+  const choices=new Map(knownRooms.map(room=>[String(room.roomId),room.roomName]));
+  for(const id of selected.keys())if(!choices.has(id))choices.set(id,id);
+  form.innerHTML=`<p id="voiceConnection"></p><button type="button" id="voiceReloadAuth" class="hidden">저장된 인증 다시 확인</button>
+  <label>총괄 운영자 ID<input id="voiceGlobal" placeholder="사용자 ID, 사용자 ID"></label>
+  <p class="muted">총괄 운영자는 선택한 모든 방에서 명령을 실행할 수 있습니다.</p>
+  <details><summary id="voiceSelectedCount">허용 방 선택</summary><div id="voiceChoices"></div></details>
+  <div id="voiceRoomOperators"></div>
+  <p class="muted">채팅방에서 !보이스룸 개설 또는 !보이스룸 종료를 보내세요.</p>
+  <button class="primary" id="saveVoiceRooms">저장</button> <button type="button" onclick="loadVoiceSettings()">새로고침</button><p id="voiceResult" aria-live="polite"></p>`;
+  $('voiceGlobal').value=(result.globalOperatorIds||[]).join(', ');
+  const renderStatus=status=>{
+   $('voiceConnection').textContent=status.online?'카카오톡 연결됨':status.authRefreshing?'카카오톡 인증 갱신 중':status.authRequired?'카카오톡 인증이 필요합니다. Host PC에서 npm run auth를 실행하세요.':'카카오톡 연결 대기 중';
+   $('voiceReloadAuth').classList.toggle('hidden',!status.authRequired||status.online||status.authRefreshing);
+  };
+  const renderOperators=()=>{
+   $('voiceSelectedCount').textContent='허용 방 선택 ('+selected.size+'개)';
+   $('voiceRoomOperators').innerHTML=[...selected].map(([id,ids])=>`<label>${esc(choices.get(id))} 운영자 ID<input data-voice-room="${esc(id)}" value="${esc(ids)}" placeholder="사용자 ID, 사용자 ID"></label>`).join('');
+   for(const input of $('voiceRoomOperators').querySelectorAll('input'))input.oninput=()=>selected.set(input.dataset.voiceRoom,input.value);
+  };
+  $('voiceChoices').innerHTML=[...choices].map(([id,name])=>`<label><input type="checkbox" value="${esc(id)}" ${selected.has(id)?'checked':''}> ${esc(name)}</label>`).join('')||'<p>매크로에서 확인된 채팅방이 없습니다.</p>';
+  for(const checkbox of $('voiceChoices').querySelectorAll('input'))checkbox.onchange=()=>{
+   if(checkbox.checked)selected.set(checkbox.value,'');else selected.delete(checkbox.value);
+   renderOperators();
+  };
+  renderOperators();
+  renderStatus(result);
   if(result.lastResult)$('voiceResult').textContent='최근 처리 결과 '+result.lastResult.status;
+  const statusNode=$('voiceConnection');
+  const poll=async()=>{
+   if(!current()||$('voiceConnection')!==statusNode)return;
+   try{const status=await api(settingsUrl,{noCache:true});if(current()&&$('voiceConnection')===statusNode)renderStatus(status);}catch{}
+   if(current()&&$('voiceConnection')===statusNode)setTimeout(poll,4000);
+  };
+  setTimeout(poll,4000);
+  $('voiceReloadAuth').onclick=async()=>{
+   try{await api(settingsUrl,{method:'POST'});if(current())$('voiceResult').textContent='저장된 인증으로 다시 연결하는 중입니다.';}
+   catch(e){if(current())$('voiceResult').textContent=e.message;}
+  };
+  const ids=value=>value.trim()?value.trim().split(/\s*,\s*/):[];
   $('saveVoiceRooms').onclick=async()=>{
    const button=$('saveVoiceRooms');button.disabled=true;
    try{
-    const rooms=$('voiceRooms').value.split(/\r?\n/).filter(x=>x.trim()).map(line=>{
-     const match=line.trim().match(/^(\d+)\s+(\d+(?:\s*,\s*\d+)*)$/);
-     if(!match)throw Error('각 줄에 채팅방 ID와 운영자 ID를 입력하세요.');
-     return {roomId:match[1],operatorIds:match[2].split(/\s*,\s*/)};
-    });
-    await api('/api/voice-settings?account='+encodeURIComponent(account),{method:'PUT',body:JSON.stringify({rooms})});
+    const rooms=[...selected].map(([roomId,value])=>({roomId,operatorIds:ids(value)}));
+    await api(settingsUrl,{method:'PUT',body:JSON.stringify({rooms,globalOperatorIds:ids($('voiceGlobal').value)})});
     if(current())$('voiceResult').textContent='저장했습니다.';
    }catch(e){if(current())$('voiceResult').textContent=e.message;}
    finally{button.disabled=false;}
