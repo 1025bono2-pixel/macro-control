@@ -6,8 +6,9 @@ async function fetchJson(url,body){const r=await fetch(url,{method:'POST',header
 function cachedApi(u){return _apiMem.get('GET|'+u)?.data}
 function loadingShell(label='불러오는 중...'){$('content').innerHTML=`<div class="tile muted page-loading">${esc(label)}</div>`}
 function authMode(v){authView=v;$('loginTab').classList.toggle('active',v==='login');$('joinTab').classList.toggle('active',v==='join');$('authButton').textContent=v==='login'?'로그인':'회원가입';$('authError').textContent=''}async function submitAuth(){try{const u=$('username').value.trim(),p=$('password').value;if(authView==='join'){await fetchJson('/api/register',{username:u,password:p});authMode('login');$('authError').style.color='#48c78e';$('authError').textContent='가입 완료! 로그인하세요.';return}const d=await fetchJson('/api/login',{username:u,password:p});token=d.token;localStorage.token=token;await openApp()}catch(e){$('authError').textContent=e.message}}function logout(){localStorage.removeItem('token');location.reload()}
-async function openApp(){me=await api('/api/me');role=me.role;$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('adminNav').classList.toggle('hidden',role!=='admin');page('dashboard');startNoticeWatcher()}
+async function openApp(){me=await api('/api/me');role=me.role;$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('adminNav').classList.toggle('hidden',role!=='admin');$('voiceNav').classList.toggle('hidden',role!=='admin');page('dashboard');startNoticeWatcher()}
 async function page(p){
+ if((p==='admin'||p==='voice')&&role!=='admin')return;
  _activePage=p;const seq=++_pageSeq;stopDashboardMacroTimer();stopDetailLive();
  $('content').classList.toggle('dashboard-content',p==='dashboard');
  const titles={dashboard:'대시보드',macros:'매크로',keywords:'키워드 매크로',admin:'총괄 관리',voice:'보룸봇 설정',settings:'설정',help:'도움말',notices:'공지사항'};$('title').textContent=titles[p]||'MACRO';
@@ -143,6 +144,7 @@ async function botDetail(key){_botDetailData=await api('/api/admin/detail/bot/'+
 async function resetBotDetail(key){if(!confirm('이 봇의 저장된 메시지, 이벤트, 연결/오류 기록과 저장된 방 이름을 모두 초기화할까요?\n인증, 매크로, 라이선스와 계정 설정은 유지됩니다.'))return;try{await api('/api/admin/detail/bot/'+encodeURIComponent(key)+'/reset',{method:'POST'});_botDetailData=await api('/api/admin/detail/bot/'+encodeURIComponent(key));renderBotDetail()}catch(e){alert(e.message)}}
 async function userDetail(id){const d=await api('/api/admin/detail/user/'+id),u=d.user;showModal(`<h2>${esc(u.username)} 회원 정보</h2><div class="tile"><div>라이선스: ${licHtml(u.license)}</div><div class="muted">가입: ${esc(u.createdAt||'-')}</div><div class="muted">최근 로그인: ${esc(u.lastLoginAt||'-')}</div></div><h3>할당된 봇</h3>${d.accounts.map(a=>`<div class="row"><b>${esc(a.displayName)}</b><span>${a.online?'● 온라인':'○ 오프라인'}</span></div>`).join('')||'없음'}`)}
 async function settingsPage(){me=await api('/api/me');const l=me.license||{};$('content').innerHTML=`${role==='user'?`<div class="tile form"><h3>라이선스</h3>${l.active?`<div>${licHtml(l)}</div><div>종류: ${l.type==='lifetime'?'Lifetime':'30일'}</div><div class="muted">${esc(l.key||'')}</div>`:`<div class="muted">라이선스를 등록해야 매크로를 실행할 수 있습니다.</div><label>라이선스 키<input id="licenseKey" placeholder="KEY-XXX-XXX"></label><button class="accent" onclick="activateLicense()">등록</button>`}</div>`:''}<div class="tile form"><h3>앱 설정</h3><label>테마<select onchange="setTheme(this.value)"><option value="dark">다크</option><option value="light">라이트</option><option value="system">시스템</option></select></label></div><div class="tile form"><h3>계정</h3><div class="muted">현재 로그인: ${esc(me.username||me.displayName||'')}</div><button class="danger" onclick="logout()">로그아웃</button></div>`}async function activateLicense(){try{await api('/api/license/activate',{method:'POST',body:JSON.stringify({key:$('licenseKey').value})});settingsPage()}catch(e){alert(e.message)}}
+
 function helpPage(){stopDashboardMacroTimer();$('content').innerHTML=`<div class="tile help"><h2>MACRO 도움말</h2><h3>1. 시작</h3><p>회원가입 후 로그인하고 설정에서 관리자가 발급한 라이선스를 등록하세요.</p><h3>2. 매크로</h3><p>할당된 봇 → 채팅방 → 텍스트를 선택하고 필요하면 사진을 추가합니다. 저장 후 <b>실행</b>을 누르면 활성화됩니다.</p><h3>3. 키워드 매크로</h3><p>지정한 채팅방에서 입력한 키워드가 포함된 메시지가 들어오면 설정한 텍스트/사진을 전송합니다.</p><h3>4. 사진</h3><p>＋ 사진 추가하기를 눌러 PC에서는 파일 선택기, 모바일에서는 갤러리/파일 선택기를 사용합니다.</p><h3>5. 채팅방 목록</h3><p>채팅방 목록은 봇이 해당 방에서 <b>메시지를 수신하거나 발신하면 자동으로 기록되어 표시</b>됩니다. 지원되는 경우 채팅방 새로고침으로 서버/캐시의 방 목록도 동기화합니다.</p><h3>6. 문제 해결</h3><p>채팅방이 보이지 않으면 해당 방에서 메시지를 한 번 수신 또는 발신한 뒤 다시 확인하거나 채팅방 새로고침을 누르세요. 봇이 오프라인이면 관리자에게 문의하세요.</p><p class="warning">본 카카오톡 메세지 전송 도움 서비스 프로그램 사용으로 발생하는 모든 문제는 책임지지 않습니다, 잘 확인 후 사용해주세요.</p></div>`}
 function setTheme(v){localStorage.theme=v;applyTheme()}function applyTheme(){const v=localStorage.theme||'dark';document.body.classList.toggle('light',v==='light'||(v==='system'&&matchMedia('(prefers-color-scheme:light)').matches))}applyTheme();if(token)openApp().catch(()=>logout());
 
@@ -170,6 +172,7 @@ async function postNotice(){try{await api('/api/notices',{method:'POST',body:JSO
 async function deleteNotice(id){if(!confirm('이 공지사항을 삭제할까요?'))return;try{await api('/api/notices/'+encodeURIComponent(id),{method:'DELETE'});await noticesPage()}catch(e){alert(e.message)}}
 
 async function voiceSettingsPage(){
+ if(role!=='admin')return;
  const content=$('content');
  content.innerHTML='<div class="tile form"><p>보룸봇 설정 불러오는 중</p></div>';
  try{
@@ -179,6 +182,21 @@ async function voiceSettingsPage(){
   if(accounts.length)await loadVoiceSettings();else $('voiceForm').textContent='연결된 봇 계정이 없습니다.';
  }catch(e){if($('title').textContent==='보룸봇 설정')content.textContent=e.message;}
 }
+
+function voiceRoomBoard(status, names){
+ if(!Array.isArray(status.roomStatuses))return '<p class="muted">Host 상태판 업데이트 대기 중</p>';
+ const labels={idle:'대기',new:'준비',preparing:'준비',creating:'개설 중',active:'연결됨',waiting:'재개설 대기',uncertain:'연결 확인 중',ending:'종료 중',ended:'종료됨',rejected:'개설 거절'};
+ const results={ended_by_server:'서버에서 종료',forbidden:'명령 권한 없음',invalid_command:'명령 형식 오류',bot_role_unverified:'봇 역할 확인 실패',create_failed:'개설 실패',create_unconfirmed:'개설 결과 미확인',end_unconfirmed:'종료 결과 미확인',connection_unconfirmed:'연결 상태 미확인',media_unconfirmed:'미디어 연결 미확인',operation_failed:'처리 실패',state_uncertain:'통화 상태 미확인'};
+ const time=value=>Number.isFinite(value)?esc(new Intl.DateTimeFormat('ko-KR',{timeZone:'Asia/Seoul',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}).format(new Date(value))):'—';
+ const rows=status.roomStatuses.map(room=>{
+  const state=labels[room.state]||'상태 확인 중';
+  const error=room.lastError;
+  const errorText=error?(results[error.status]||error.status)+(error.reason!=null?' ('+error.reason+')':''):'';
+  return '<tr><td><b>'+esc(names.get(room.roomId)||room.roomId)+'</b><div class="muted">'+esc(room.title||'')+'</div></td><td><span class="'+(room.state==='active'?'online':'muted')+'">'+esc(state)+'</span>'+(room.repeating?'<div class="muted">자동</div>':'')+'</td><td>'+time(room.endsAt)+'</td><td>'+time(room.nextOpenAt)+'</td><td>'+esc(errorText||'—')+(error?.at?'<div class="muted">'+time(Date.parse(error.at))+'</div>':'')+'</td></tr>';
+ }).join('');
+ return '<div class="voice-status-scroll"><table class="voice-status-table"><thead><tr><th>채팅방 / 제목</th><th>상태</th><th>종료 예정</th><th>다음 개설</th><th>마지막 오류</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
 async function loadVoiceSettings(){
  const account=$('voiceAccount').value,form=$('voiceForm');
  const current=()=>$('voiceForm')===form&&$('voiceAccount')?.value===account;
@@ -193,21 +211,20 @@ async function loadVoiceSettings(){
   const selected=new Map(result.rooms.map(room=>[room.roomId,room.operatorIds.join(', ')]));
   const choices=new Map(knownRooms.map(room=>[String(room.roomId),room.roomName]));
   for(const id of selected.keys())if(!choices.has(id))choices.set(id,id);
-  form.innerHTML=`<p id="voiceConnection"></p><button type="button" id="voiceReloadAuth" class="hidden">저장된 인증 다시 확인</button>
-  <label>총괄 운영자 ID<input id="voiceGlobal" placeholder="사용자 ID, 사용자 ID"></label>
-  <p class="muted">총괄 운영자는 선택한 모든 방에서 명령을 실행할 수 있습니다.</p>
-  <details><summary id="voiceSelectedCount">허용 방 선택</summary><div id="voiceChoices"></div></details>
-  <div id="voiceRoomOperators"></div>
-  <p class="muted">채팅방에서 !보이스룸 개설 또는 !보이스룸 종료를 보내세요.</p>
+  form.innerHTML=`<div class="voice-status-panel"><h3>방별 상태</h3><div id="voiceRoomBoard" aria-live="polite"></div></div><p id="voiceConnection"></p><button type="button" id="voiceReloadAuth" class="hidden">저장된 인증 다시 확인</button>
+  <label>추가 총괄 운영자 ID · 선택<input id="voiceGlobal" placeholder="사용자 ID, 사용자 ID"></label>
+  <details class="voice-room-picker"><summary id="voiceSelectedCount">허용 방 선택</summary><div id="voiceChoices"></div></details>
+  <div id="voiceRoomOperators" class="voice-room-operators"></div>
   <button class="primary" id="saveVoiceRooms">저장</button> <button type="button" onclick="loadVoiceSettings()">새로고침</button><p id="voiceResult" aria-live="polite"></p>`;
   $('voiceGlobal').value=(result.globalOperatorIds||[]).join(', ');
   const renderStatus=status=>{
+   $('voiceRoomBoard').innerHTML=voiceRoomBoard(status,choices);
    $('voiceConnection').textContent=status.online?'카카오톡 연결됨':status.authRefreshing?'카카오톡 인증 갱신 중':status.authRequired?'카카오톡 인증이 필요합니다. Host PC에서 npm run auth를 실행하세요.':'카카오톡 연결 대기 중';
    $('voiceReloadAuth').classList.toggle('hidden',!status.authRequired||status.online||status.authRefreshing);
   };
   const renderOperators=()=>{
    $('voiceSelectedCount').textContent='허용 방 선택 ('+selected.size+'개)';
-   $('voiceRoomOperators').innerHTML=[...selected].map(([id,ids])=>`<label>${esc(choices.get(id))} 운영자 ID<input data-voice-room="${esc(id)}" value="${esc(ids)}" placeholder="사용자 ID, 사용자 ID"></label>`).join('');
+   $('voiceRoomOperators').innerHTML=[...selected].map(([id,ids])=>`<label>${esc(choices.get(id))} · 추가 운영자 ID (선택)<input data-voice-room="${esc(id)}" value="${esc(ids)}" placeholder="사용자 ID, 사용자 ID"></label>`).join('');
    for(const input of $('voiceRoomOperators').querySelectorAll('input'))input.oninput=()=>selected.set(input.dataset.voiceRoom,input.value);
   };
   $('voiceChoices').innerHTML=[...choices].map(([id,name])=>`<label><input type="checkbox" value="${esc(id)}" ${selected.has(id)?'checked':''}> ${esc(name)}</label>`).join('')||'<p>매크로에서 확인된 채팅방이 없습니다.</p>';
@@ -234,10 +251,11 @@ async function loadVoiceSettings(){
    const button=$('saveVoiceRooms');button.disabled=true;
    try{
     const rooms=[...selected].map(([roomId,value])=>({roomId,operatorIds:ids(value)}));
-    await api(settingsUrl,{method:'PUT',body:JSON.stringify({rooms,globalOperatorIds:ids($('voiceGlobal').value)})});
-    if(current())$('voiceResult').textContent='저장했습니다.';
+    const saved=await api(settingsUrl,{method:'PUT',body:JSON.stringify({rooms,globalOperatorIds:ids($('voiceGlobal').value)})});
+    if(current())$('voiceResult').textContent=saved.appliedRoomIds?'저장했습니다. 허용 방 '+saved.appliedRoomIds.length+'개.':'저장했습니다.';
    }catch(e){if(current())$('voiceResult').textContent=e.message;}
    finally{button.disabled=false;}
   };
  }catch(e){if(current())form.textContent=e.message;}
 }
+
