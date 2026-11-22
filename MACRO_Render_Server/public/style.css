@@ -330,3 +330,6 @@ section{width:100%}
 .voice-status-table td:first-child{min-width:180px;max-width:250px;overflow-wrap:anywhere}
 .voice-status-table tr:last-child td{border-bottom:0}
 .voice-status-table .muted{font-size:11px}
+
+/* Shared dashboard polish */
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px}button{transition:background .15s,border-color .15s,box-shadow .15s}button:not(:disabled):hover{box-shadow:0 2px 10px #0002}aside nav button.nav-current{background:color-mix(in srgb,var(--accent) 18%,var(--panel));color:#bcaeff}header{background:var(--panel)}.tile,.row{box-shadow:0 3px 16px #0000000a}.tile{border-radius:14px}input:focus,select:focus,textarea:focus{border-color:var(--accent)}.report-frame{display:block;width:100%;height:calc(100vh - 115px);min-height:650px;border:0;background:var(--bg);border-radius:12px}body.light aside nav button.nav-current{color:var(--accent)}@media(max-width:700px){.report-frame{height:calc(100dvh - 155px);min-height:550px}}

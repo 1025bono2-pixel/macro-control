@@ -6,12 +6,14 @@ async function fetchJson(url,body){const r=await fetch(url,{method:'POST',header
 function cachedApi(u){return _apiMem.get('GET|'+u)?.data}
 function loadingShell(label='불러오는 중...'){$('content').innerHTML=`<div class="tile muted page-loading">${esc(label)}</div>`}
 function authMode(v){authView=v;$('loginTab').classList.toggle('active',v==='login');$('joinTab').classList.toggle('active',v==='join');$('authButton').textContent=v==='login'?'로그인':'회원가입';$('authError').textContent=''}async function submitAuth(){try{const u=$('username').value.trim(),p=$('password').value;if(authView==='join'){await fetchJson('/api/register',{username:u,password:p});authMode('login');$('authError').style.color='#48c78e';$('authError').textContent='가입 완료! 로그인하세요.';return}const d=await fetchJson('/api/login',{username:u,password:p});token=d.token;localStorage.token=token;await openApp()}catch(e){$('authError').textContent=e.message}}function logout(){localStorage.removeItem('token');location.reload()}
-async function openApp(){me=await api('/api/me');role=me.role;$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('adminNav').classList.toggle('hidden',role!=='admin');$('voiceNav').classList.toggle('hidden',role!=='admin');page('dashboard');startNoticeWatcher()}
+async function openApp(){me=await api('/api/me');role=me.role;$('auth').classList.add('hidden');$('app').classList.remove('hidden');$('adminNav').classList.toggle('hidden',role!=='admin');$('voiceNav').classList.toggle('hidden',role!=='admin');$('reportNav').classList.toggle('hidden',role!=='admin');page(['dashboard','macros','keywords','voice','report','settings','help','notices'].includes(typeof location==='undefined'?'':location.hash.slice(1))?location.hash.slice(1):'dashboard');startNoticeWatcher()}
 async function page(p){
- if((p==='admin'||p==='voice')&&role!=='admin')return;
+ if((p==='admin'||p==='voice'||p==='report')&&role!=='admin')return;
  _activePage=p;const seq=++_pageSeq;stopDashboardMacroTimer();stopDetailLive();
+ document.querySelectorAll('aside nav button').forEach(b=>b.classList.toggle('nav-current',b.getAttribute('onclick')==="page('"+p+"')"));
  $('content').classList.toggle('dashboard-content',p==='dashboard');
- const titles={dashboard:'대시보드',macros:'매크로',keywords:'키워드 매크로',admin:'총괄 관리',voice:'보룸봇 설정',settings:'설정',help:'도움말',notices:'공지사항'};$('title').textContent=titles[p]||'MACRO';
+ const titles={dashboard:'대시보드',macros:'매크로',keywords:'키워드 매크로',admin:'총괄 관리',voice:'보룸봇 설정',report:'신고봇',settings:'설정',help:'도움말',notices:'공지사항'};$('title').textContent=titles[p]||'MACRO';
+ if(p==='report'){$('content').innerHTML='<iframe class="report-frame" title="신고봇 관리" src="/api/report-bot/ui?embedded=1"></iframe>';return;}
  if(p==='dashboard'){const st=cachedApi('/api/status'),recent=cachedApi('/api/macro/recent');if(st)renderDashboard(st,recent||[]);else loadingShell('대시보드를 불러오는 중...');return requestAnimationFrame(()=>dashboard(seq))}
  if(p==='macros'||p==='keywords'){const st=cachedApi('/api/status'),all=cachedApi('/api/macros'),kind=p==='keywords'?'keyword':'schedule';window._macroKind=kind;if(st&&all){window._accounts=st.accounts;window._macros=all;renderMacroList()}else loadingShell(p==='keywords'?'키워드 매크로를 불러오는 중...':'매크로를 불러오는 중...');return requestAnimationFrame(()=>macroPage(kind,seq))}
  loadingShell();requestAnimationFrame(()=>{if(seq!==_pageSeq)return;if(p==='admin')adminPage();else if(p==='voice')return voiceSettingsPage();if(p==='settings')settingsPage();else if(p==='help')helpPage();else if(p==='notices')noticesPage()});
